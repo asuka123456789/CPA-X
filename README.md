@@ -1,34 +1,38 @@
-# CPA-XXX 管理面板
+# CPA-XXX Admin Panel
 
-一个用于 **CLIProxyAPI** 的监控与管理面板，支持健康检查、资源监控、日志查看、更新管理、请求统计与定价显示等功能。
+English | [中文](README_CN.md)
 
-## 适用环境
-- **推荐：Linux**（面板含 `systemctl` 相关功能）
+A monitoring and management panel for **CLIProxyAPI**, featuring health checks, resource monitoring, log viewing, update management, request statistics, and pricing display.
+
+## Requirements
+- **Recommended: Linux** (panel includes `systemctl` functionality)
 - Python 3.11+
-- 需要能访问 CLIProxyAPI 的管理接口（默认 `http://127.0.0.1:8317`）
+- Access to CLIProxyAPI management interface (default `http://127.0.0.1:8317`)
 
-> Windows 也可以运行，但“服务控制/自动更新”等 systemd 相关功能不可用。
+> Windows is also supported, but service control and auto-update features (systemd-related) are unavailable.
 
-## 一条龙安装（新手版）
+## Quick Installation
 
-### 0) 一键安装（推荐）
+### Option 1: One-Click Install (Recommended)
 ```bash
-# Linux（会自动注册 systemd 服务）
+# Linux (auto-registers systemd service)
 bash scripts/install.sh
 ```
 
 ```powershell
-# Windows（后台启动）
+# Windows (background start)
 powershell -ExecutionPolicy Bypass -File scripts/install.ps1
 ```
 
-### 1) 克隆项目
+### Option 2: Manual Installation
+
+#### 1) Clone the repository
 ```bash
-git clone <你的仓库地址>
-cd CPA-XXX
+git clone https://github.com/ferretgeek/CPA-X.git
+cd CPA-X
 ```
 
-### 2) 创建虚拟环境并安装依赖
+#### 2) Create virtual environment and install dependencies
 ```bash
 python -m venv .venv
 # Windows
@@ -39,8 +43,8 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 3) 配置环境变量
-复制示例文件并按需修改：
+#### 3) Configure environment variables
+Copy the example file and modify as needed:
 ```bash
 # Windows
 copy .env.example .env
@@ -48,35 +52,36 @@ copy .env.example .env
 cp .env.example .env
 ```
 
-重点配置：
+Key configurations:
 - `CLIPROXY_PANEL_CLIPROXY_DIR` / `CLIPROXY_PANEL_CLIPROXY_CONFIG`
 - `CLIPROXY_PANEL_CLIPROXY_LOG`
 - `CLIPROXY_PANEL_CLIPROXY_API_BASE` / `CLIPROXY_PANEL_CLIPROXY_API_PORT`
-- `CLIPROXY_PANEL_MANAGEMENT_KEY`（如 CLIProxy API 有管理密钥）
+- `CLIPROXY_PANEL_MANAGEMENT_KEY` (if CLIProxy API has a management key)
 
-### 4) 启动面板
+#### 4) Start the panel
 ```bash
 python app.py
 ```
 
-打开浏览器访问：
+Open your browser and visit:
 ```
 http://127.0.0.1:8080
 ```
 
-## 常见问题
-### 1) 页面能打开但数据为空
-检查 CLIProxy 是否在运行，并确认 `.env` 中的 `CLIPROXY_PANEL_CLIPROXY_API_BASE/PORT` 指向正确。
+## FAQ
 
-### 2) 健康检查超时
-`/api/status` 会触发更多检查，首次可能稍慢；可先用 `/api/resources` 验证服务可访问。
+### 1) Page loads but data is empty
+Check if CLIProxy is running and verify that `CLIPROXY_PANEL_CLIPROXY_API_BASE/PORT` in `.env` points to the correct address.
 
-### 3) systemd 相关功能不可用
-这是 Linux 专用功能，Windows 环境下会自动失败但不会影响面板启动。
+### 2) Health check timeout
+`/api/status` triggers additional checks and may be slow on first load. Try `/api/resources` first to verify service accessibility.
 
-## 安全提示
-- **不要把 `.env` 提交到仓库**（已在 `.gitignore` 中忽略）
-- 管理密钥、模型密钥等敏感字段请只放在 `.env`
+### 3) systemd features not working
+This is a Linux-only feature. On Windows, it will fail gracefully without affecting panel startup.
 
-## 许可协议
-MIT License（见 `LICENSE`）
+## Security Notes
+- **Do not commit `.env` to the repository** (already in `.gitignore`)
+- Keep management keys and model keys only in `.env`
+
+## License
+MIT License (see `LICENSE`)
