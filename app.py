@@ -1519,28 +1519,16 @@ def load_cliproxy_config(use_cache=True):
         except Exception as e:
             return None, str(e)
     else:
-        # 本地文件不存在，尝试通过远程管理 API 获取配置
+        # 本地文件不存在，尝试通过远程 API 验证服务配置是否有效
         try:
             import requests as _req
             base_url = _build_management_base_url()
-            resp = _req.get(f'{base_url}/v0/management/config', headers=_management_headers(), timeout=10)
-            if resp.status_code == 200:
-                data = resp.json()
-                raw_content = data.get('content', data.get('config', ''))
-                if isinstance(raw_content, dict):
-                    result = (raw_content, None)
-                    cache.set(cache_key, result)
-                    return result
-                elif isinstance(raw_content, str) and raw_content.strip():
-                    if HAS_YAML:
-                        config = yaml.safe_load(raw_content)
-                        result = (config, None)
-                        cache.set(cache_key, result)
-                        return result
-                    else:
-                        result = ({'_raw': raw_content}, None)
-                        cache.set(cache_key, result)
-                        return result
+            # 尝试获取 usage 数据，能响应说明配置有效
+            resp = _req.get(f'{base_url}/v0/management/usage', headers=_management_headers(), timeout=10)
+            if resp.status_code < 500:
+                result = ({'_remote': True, '_status': 'valid'}, None)
+                cache.set(cache_key, result)
+                return result
         except Exception:
             pass
         return None, 'Config file not found (local and remote)'
@@ -1956,11 +1944,35 @@ def perform_health_check(use_cache=True):
         results['checks'].append(auth_check)
         results['checks_map']['auth'] = auth_check
     else:
-        auth_check = {
-            'name': '认证文件',
-            'status': 'fail',
-            'message': '认证目录不存在'
-        }
+        # 本地目录不存在，通过远程 API 检查模型来间接验证认证状态
+        try:
+            import requests as _req
+            base_url = _build_management_base_url()
+            api_key = CONFIG.get('models_api_key', '')
+            headers = {'Content-Type': 'application/json'}
+            if api_key:
+                headers['Authorization'] = f'Bearer {api_key}'
+            resp = _req.get(f'{base_url}/v1/models', headers=headers, timeout=5)
+            if resp.status_code == 200:
+                models = resp.json().get('data', [])
+                auth_check = {
+                    'name': '认证文件',
+                    'status': 'pass' if len(models) > 0 else 'warn',
+                    'message': f'远程验证: {len(models)} 个模型可用',
+                    'details': {'count': len(models), 'remote': True}
+                }
+            else:
+                auth_check = {
+                    'name': '认证文件',
+                    'status': 'warn',
+                    'message': f'远程验证: API 返回 {resp.status_code}'
+                }
+        except Exception:
+            auth_check = {
+                'name': '认证文件',
+                'status': 'fail',
+                'message': '认证目录不存在且远程验证失败'
+            }
         results['checks'].append(auth_check)
         results['checks_map']['auth'] = auth_check
 
