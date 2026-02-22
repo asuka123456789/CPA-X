@@ -925,6 +925,18 @@ def get_service_status(use_cache=True):
     else:
         status_out = 'Not supported on this platform'
 
+    # 如果本地检测不到，尝试通过远程 API 检测服务是否存活
+    if not is_running:
+        try:
+            import requests as _req
+            base_url = _build_management_base_url()
+            resp = _req.get(f'{base_url}/v1/models', headers=_management_headers(), timeout=5)
+            if resp.status_code < 500:
+                is_running = True
+                status_out = f'Remote API responding (HTTP {resp.status_code})'
+        except Exception:
+            pass
+
     if command_available('pgrep'):
         _, pid_out, _ = run_cmd('pgrep -f "cliproxy -config" | head -1')
 
@@ -1488,27 +1500,50 @@ def load_cliproxy_config(use_cache=True):
             return cached
 
     config_path = CONFIG['cliproxy_config']
-    if not os.path.exists(config_path):
-        return None, 'Config file not found'
-
-    if not HAS_YAML:
-        # 没有yaml模块时返回原始内容
+    if os.path.exists(config_path):
+        # 本地文件存在，直接读取
+        if not HAS_YAML:
+            try:
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    result = ({'_raw': f.read()}, None)
+                    cache.set(cache_key, result)
+                    return result
+            except Exception as e:
+                return None, str(e)
         try:
             with open(config_path, 'r', encoding='utf-8') as f:
-                result = ({'_raw': f.read()}, None)
+                config = yaml.safe_load(f)
+                result = (config, None)
                 cache.set(cache_key, result)
                 return result
         except Exception as e:
             return None, str(e)
-
-    try:
-        with open(config_path, 'r', encoding='utf-8') as f:
-            config = yaml.safe_load(f)
-            result = (config, None)
-            cache.set(cache_key, result)
-            return result
-    except Exception as e:
-        return None, str(e)
+    else:
+        # 本地文件不存在，尝试通过远程管理 API 获取配置
+        try:
+            import requests as _req
+            base_url = _build_management_base_url()
+            resp = _req.get(f'{base_url}/v0/management/config', headers=_management_headers(), timeout=10)
+            if resp.status_code == 200:
+                data = resp.json()
+                raw_content = data.get('content', data.get('config', ''))
+                if isinstance(raw_content, dict):
+                    result = (raw_content, None)
+                    cache.set(cache_key, result)
+                    return result
+                elif isinstance(raw_content, str) and raw_content.strip():
+                    if HAS_YAML:
+                        config = yaml.safe_load(raw_content)
+                        result = (config, None)
+                        cache.set(cache_key, result)
+                        return result
+                    else:
+                        result = ({'_raw': raw_content}, None)
+                        cache.set(cache_key, result)
+                        return result
+        except Exception:
+            pass
+        return None, 'Config file not found (local and remote)'
 
 def validate_yaml_config(content):
     """验证YAML配置格式"""
@@ -1929,18 +1964,21 @@ def perform_health_check(use_cache=True):
         results['checks'].append(auth_check)
         results['checks_map']['auth'] = auth_check
 
-    # 6. API端口检查
+    # 6. API端口检查（支持远程地址）
     try:
         import socket
+        from urllib.parse import urlparse
+        parsed = urlparse(CONFIG.get('cliproxy_api_base', 'http://127.0.0.1'))
+        check_host = parsed.hostname or '127.0.0.1'
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(2)
-        result = sock.connect_ex(('127.0.0.1', CONFIG['cliproxy_api_port']))
+        result = sock.connect_ex((check_host, CONFIG['cliproxy_api_port']))
         sock.close()
         port_open = result == 0
         port_check = {
             'name': 'API端口',
             'status': 'pass' if port_open else 'fail',
-            'message': f'端口 {CONFIG["cliproxy_api_port"]} {"开放" if port_open else "关闭"}'
+            'message': f'{check_host}:{CONFIG["cliproxy_api_port"]} {"开放" if port_open else "关闭"}'
         }
         results['checks'].append(port_check)
         results['checks_map']['api_port'] = port_check
@@ -2788,13 +2826,16 @@ def api_test_connection():
     results = {'success': True, 'tests': []}
 
     if target in ['api', 'all']:
-        # 测试API端口
+        # 测试API端口（支持远程地址）
         try:
             import socket
+            from urllib.parse import urlparse
+            parsed = urlparse(CONFIG.get('cliproxy_api_base', 'http://127.0.0.1'))
+            check_host = parsed.hostname or '127.0.0.1'
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(5)
             start = time.time()
-            result = sock.connect_ex(('127.0.0.1', CONFIG['cliproxy_api_port']))
+            result = sock.connect_ex((check_host, CONFIG['cliproxy_api_port']))
             latency = (time.time() - start) * 1000
             sock.close()
 
@@ -2802,7 +2843,7 @@ def api_test_connection():
                 'name': 'API端口',
                 'success': result == 0,
                 'latency': f'{latency:.1f}ms' if result == 0 else None,
-                'message': f'端口 {CONFIG["cliproxy_api_port"]} 正常' if result == 0 else '连接失败'
+                'message': f'{check_host}:{CONFIG["cliproxy_api_port"]} 正常' if result == 0 else '连接失败'
             })
         except Exception as e:
             results['tests'].append({
